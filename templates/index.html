@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cat or Dog Classifier</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .loader {
+            border-top-color: #3498db;
+            -webkit-animation: spinner 1.5s linear infinite;
+            animation: spinner 1.5s linear infinite;
+        }
+        
+        @-webkit-keyframes spinner {
+            0% { -webkit-transform: rotate(0deg); }
+            100% { -webkit-transform: rotate(360deg); }
+        }
+        
+        @keyframes spinner {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden md:max-w-2xl p-6">
+            <div class="text-center">
+                <h1 class="text-3xl font-bold text-gray-800 mb-2">Cat or Dog Classifier</h1>
+                <p class="text-gray-600 mb-6">Upload an image to see if it's a cat or a dog</p>
+                
+                <form id="upload-form" class="mb-6">
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2" for="image-upload">
+                            Choose an image
+                        </label>
+                        <input 
+                            class="hidden" 
+                            type="file" 
+                            id="image-upload" 
+                            name="file" 
+                            accept=".jpg, .jpeg, .png"
+                        >
+                        <div class="flex items-center justify-center w-full">
+                            <label 
+                                for="image-upload" 
+                                class="flex flex-col items-center justify-center w-full h-64 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100"
+                            >
+                                <div class="flex flex-col items-center justify-center pt-5 pb-6" id="upload-prompt">
+                                    <svg class="w-10 h-10 mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                                    </svg>
+                                    <p class="mb-2 text-sm text-gray-500"><span class="font-semibold">Click to upload</span> or drag and drop</p>
+                                    <p class="text-xs text-gray-500">PNG, JPG or JPEG (MAX. 10MB)</p>
+                                </div>
+                                <div id="image-preview" class="hidden w-full h-full">
+                                    <img id="preview-img" class="w-full h-full object-contain" src="#" alt="Preview">
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <button 
+                        type="submit" 
+                        id="submit-btn"
+                        class="w-full bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled
+                    >
+                        Classify Image
+                    </button>
+                </form>
+                
+                <div id="loading" class="hidden flex justify-center items-center mb-4">
+                    <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12"></div>
+                </div>
+                
+                <div id="result" class="hidden">
+                    <div class="p-4 mb-4 rounded-lg">
+                        <h2 class="text-xl font-bold mb-2">Result:</h2>
+                        <div id="prediction-result" class="text-2xl font-bold"></div>
+                        <div id="confidence" class="text-lg text-gray-700 mt-2"></div>
+                    </div>
+                    <button 
+                        id="reset-btn" 
+                        class="mt-4 bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+                    >
+                        Try Another Image
+                    </button>
+                </div>
+                
+                <div id="error" class="hidden text-red-500 mt-4"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('upload-form');
+            const imageUpload = document.getElementById('image-upload');
+            const submitBtn = document.getElementById('submit-btn');
+            const loading = document.getElementById('loading');
+            const result = document.getElementById('result');
+            const predictionResult = document.getElementById('prediction-result');
+            const confidence = document.getElementById('confidence');
+            const error = document.getElementById('error');
+            const resetBtn = document.getElementById('reset-btn');
+            const imagePreview = document.getElementById('image-preview');
+            const previewImg = document.getElementById('preview-img');
+            const uploadPrompt = document.getElementById('upload-prompt');
+            
+            // Preview image when selected
+            imageUpload.addEventListener('change', function() {
+                const file = this.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        previewImg.src = e.target.result;
+                        imagePreview.classList.remove('hidden');
+                        uploadPrompt.classList.add('hidden');
+                        submitBtn.disabled = false;
+                    }
+                    reader.readAsDataURL(file);
+                } else {
+                    resetPreview();
+                }
+            });
+            
+            // Handle form submission
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const formData = new FormData();
+                const file = imageUpload.files[0];
+                
+                if (!file) {
+                    showError('Please select an image first');
+                    return;
+                }
+                
+                formData.append('file', file);
+                
+                // Show loading spinner
+                form.classList.add('hidden');
+                loading.classList.remove('hidden');
+                error.classList.add('hidden');
+                result.classList.add('hidden');
+                
+                // Send request to server
+                fetch('/predict', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(data => {
+                            throw new Error(data.error || 'Something went wrong');
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Display result
+                    loading.classList.add('hidden');
+                    result.classList.remove('hidden');
+                    
+                    // Set result class based on prediction
+                    if (data.result === 'Cat') {
+                        predictionResult.textContent = '🐱 Cat';
+                        predictionResult.className = 'text-2xl font-bold text-purple-600';
+                    } else {
+                        predictionResult.textContent = '🐶 Dog';
+                        predictionResult.className = 'text-2xl font-bold text-blue-600';
+                    }
+                    
+                    confidence.textContent = `Confidence: ${data.confidence}%`;
+                })
+                .catch(err => {
+                    loading.classList.add('hidden');
+                    form.classList.remove('hidden');
+                    showError(err.message);
+                });
+            });
+            
+            // Reset button
+            resetBtn.addEventListener('click', function() {
+                result.classList.add('hidden');
+                form.classList.remove('hidden');
+                resetPreview();
+            });
+            
+            function resetPreview() {
+                imageUpload.value = '';
+                previewImg.src = '#';
+                imagePreview.classList.add('hidden');
+                uploadPrompt.classList.remove('hidden');
+                submitBtn.disabled = true;
+            }
+            
+            function showError(message) {
+                error.textContent = message;
+                error.classList.remove('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
